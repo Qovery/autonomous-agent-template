@@ -55,9 +55,13 @@ These are injected automatically by the RDE Portal when it launches the environm
 | `RDE_RUN_CALLBACK_URL` | BFF callback URL for reporting results |
 | `RDE_RUN_TIMEOUT_MIN` | Hard timeout for the agent (minutes) |
 | `ANTHROPIC_API_KEY` | For Claude Code authentication |
-| `BLUEPRINT_GIT_REPOSITORY` | Target repo URL |
-| `BLUEPRINT_GIT_TOKEN` | Git token for push + PR creation |
-| `BLUEPRINT_GIT_PROVIDER` | `github`, `gitlab`, or `bitbucket` |
+| `REPO_COUNT` | Number of repositories to clone |
+| `REPO_URL` / `REPO_1_URL` | Primary repo URL |
+| `REPO_BRANCH` / `REPO_1_BRANCH` | Primary repo branch (default: `main`) |
+| `REPO_TOKEN` / `REPO_1_TOKEN` | Git token for push + PR creation |
+| `REPO_N_URL` | Additional repo URLs (N = 2, 3, ...) |
+| `REPO_N_BRANCH` | Additional repo branches |
+| `REPO_N_TOKEN` | Additional repo tokens |
 
 ## Controlling the agent from Linear
 

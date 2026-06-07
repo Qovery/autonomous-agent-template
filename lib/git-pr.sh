@@ -8,12 +8,26 @@
 #   bitbucket: x-token-auth:<token>
 # ────────────────────────────────────────────────────────────────────────────────
 
+# Detect git provider from a repo URL.
+# Usage: detect_git_provider <repo_url>
+# Outputs: github | gitlab | bitbucket | unknown
+detect_git_provider() {
+  local url="$1"
+  case "$url" in
+    *github.com*)    echo "github" ;;
+    *gitlab.com*|*gitlab.*) echo "gitlab" ;;
+    *bitbucket.org*) echo "bitbucket" ;;
+    *)               echo "github" ;;  # default to github for self-hosted
+  esac
+}
+
 # Build a token-authed git URL for the given provider.
-# Usage: build_authed_url <repo_url> <token> <provider>
+# Usage: build_authed_url <repo_url> <token> [provider]
+#   If provider is omitted, it is auto-detected from the URL.
 build_authed_url() {
   local repo_url="$1"
   local token="$2"
-  local provider="$3"
+  local provider="${3:-$(detect_git_provider "$repo_url")}"
 
   # Strip any existing auth from the URL and extract components
   local clean_url
@@ -40,14 +54,19 @@ extract_owner_repo() {
 }
 
 # Clone a repo with token auth.
-# Usage: clone_repo <repo_url> <token> <provider> <dest_dir>
+# Usage: clone_repo <repo_url> <token> <provider> <dest_dir> [branch]
+#   If provider is empty, it is auto-detected from the URL.
 clone_repo() {
-  local repo_url="$1" token="$2" provider="$3" dest_dir="$4"
+  local repo_url="$1" token="$2" provider="$3" dest_dir="$4" branch="${5:-}"
   local authed_url
   authed_url=$(build_authed_url "$repo_url" "$token" "$provider")
 
   # Silence the URL in output (it contains the token)
-  git clone --depth 1 "$authed_url" "$dest_dir" 2>&1 | grep -v "$token" || true
+  if [[ -n "$branch" ]]; then
+    git clone --depth 1 --branch "$branch" "$authed_url" "$dest_dir" 2>&1 | grep -v "$token" || true
+  else
+    git clone --depth 1 "$authed_url" "$dest_dir" 2>&1 | grep -v "$token" || true
+  fi
 
   [[ -d "$dest_dir/.git" ]]
 }
