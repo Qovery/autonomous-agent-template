@@ -5,7 +5,7 @@
 # Performs the full autonomous cycle:
 #   1. Fetch the Linear issue
 #   2. Clone the repo + create a branch
-#   3. Run the AI agent headless (Claude Code / OpenCode)
+#   3. Run the AI agent headless (Claude Code / OpenCode / Codex / Gemini / Cursor)
 #   4. Commit + push + open a PR
 #   5. Comment the PR link on the Linear issue
 #   6. Call back the BFF with the result
@@ -104,6 +104,15 @@ case "$RDE_AUTONOMOUS_AGENT" in
     ;;
   opencode)
     timeout "${RDE_RUN_TIMEOUT_MIN}m" opencode run "$(cat "$TASK_FILE")" || AGENT_EXIT=$?
+    ;;
+  codex)
+    timeout "${RDE_RUN_TIMEOUT_MIN}m" codex --full-auto "$(cat "$TASK_FILE")" || AGENT_EXIT=$?
+    ;;
+  gemini)
+    timeout "${RDE_RUN_TIMEOUT_MIN}m" gemini -p "$(cat "$TASK_FILE")" || AGENT_EXIT=$?
+    ;;
+  cursor)
+    timeout "${RDE_RUN_TIMEOUT_MIN}m" cursor-agent "$(cat "$TASK_FILE")" || AGENT_EXIT=$?
     ;;
   *)
     log_error "Unknown agent: $RDE_AUTONOMOUS_AGENT"
