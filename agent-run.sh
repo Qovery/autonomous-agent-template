@@ -209,12 +209,21 @@ WATCHER_PID=$!
 AGENT_EXIT=0
 case "$RDE_AUTONOMOUS_AGENT" in
   claude)
-    # Use script -qefc to allocate a pseudo-terminal so Claude flushes each
-    # stream-json event immediately (pipe stdout triggers full buffering).
-    # Prompt is fed via stdin to avoid shell quoting issues with script -c.
+    # Use script(1) to allocate a pty so Claude flushes stream-json events
+    # immediately (pipe stdout triggers full 4KB buffering in Bun's runtime).
+    # -E never: suppress pty input echo (otherwise the prompt is echoed to stdout)
+    # A wrapper script avoids stdin EOF issues and shell quoting problems.
+    CLAUDE_WRAPPER="/tmp/run-claude.sh"
+    cat > "$CLAUDE_WRAPPER" <<'CWEOF'
+#!/bin/bash
+exec claude -p --dangerously-skip-permissions --output-format stream-json --verbose "$(cat /tmp/task.md)"
+CWEOF
+    chmod +x "$CLAUDE_WRAPPER"
+    chown "$AGENT_USER:$AGENT_USER" "$CLAUDE_WRAPPER"
+
     timeout "${RDE_RUN_TIMEOUT_MIN}m" runuser -u "$AGENT_USER" -- \
-      script -qefc "claude -p --dangerously-skip-permissions --output-format stream-json --verbose" /dev/null \
-      < "$TASK_FILE" 2>&1 | tee -a "$AGENT_LOG" || AGENT_EXIT=${PIPESTATUS[0]}
+      script -qefc "$CLAUDE_WRAPPER" -E never /dev/null \
+      2>&1 | tee -a "$AGENT_LOG" || AGENT_EXIT=${PIPESTATUS[0]}
     ;;
   opencode)
     timeout "${RDE_RUN_TIMEOUT_MIN}m" runuser -u "$AGENT_USER" -- \
