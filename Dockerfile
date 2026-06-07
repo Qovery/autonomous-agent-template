@@ -9,7 +9,7 @@ COPY .config.rde.qovery.yml /tmp/.config.rde.qovery.yml
 # Install RDE tooling (Claude Code, OpenCode, Codex, Cursor, proxy, git, jq, etc.)
 # The config file disables code-server, the standard entrypoint, and other
 # interactive-only components that aren't needed for headless autonomous mode.
-RUN RDE_CONFIG=/tmp/.config.rde.qovery.yml \
+RUN export RDE_CONFIG=/tmp/.config.rde.qovery.yml && \
     curl -fsSL https://rde.qovery.com/install.sh | bash
 
 # Install our autonomous agent scripts
