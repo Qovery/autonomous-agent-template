@@ -209,9 +209,12 @@ WATCHER_PID=$!
 AGENT_EXIT=0
 case "$RDE_AUTONOMOUS_AGENT" in
   claude)
+    # Use script -qefc to allocate a pseudo-terminal so Claude flushes each
+    # stream-json event immediately (pipe stdout triggers full buffering).
+    # Prompt is fed via stdin to avoid shell quoting issues with script -c.
     timeout "${RDE_RUN_TIMEOUT_MIN}m" runuser -u "$AGENT_USER" -- \
-      claude -p --dangerously-skip-permissions --output-format stream-json --verbose \
-      "$(cat "$TASK_FILE")" 2>&1 | tee -a "$AGENT_LOG" || AGENT_EXIT=${PIPESTATUS[0]}
+      script -qefc "claude -p --dangerously-skip-permissions --output-format stream-json --verbose" /dev/null \
+      < "$TASK_FILE" 2>&1 | tee -a "$AGENT_LOG" || AGENT_EXIT=${PIPESTATUS[0]}
     ;;
   opencode)
     timeout "${RDE_RUN_TIMEOUT_MIN}m" runuser -u "$AGENT_USER" -- \
