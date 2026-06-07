@@ -149,30 +149,95 @@ chown "$AGENT_USER:$AGENT_USER" "$TASK_FILE"
 log "Running ${RDE_AUTONOMOUS_AGENT} agent as $AGENT_USER (timeout: ${RDE_RUN_TIMEOUT_MIN}m)..."
 
 AGENT_LOG="/tmp/agent-output.log"
+: > "$AGENT_LOG"
+
+# Derive progress URL from callback URL (same base, /progress instead of /result)
+PROGRESS_URL="${RDE_RUN_CALLBACK_URL%/result}/progress"
+
+# Background watcher: tails the agent log file and forwards progress events to BFF.
+# For stream-json (Claude), parses JSON events. For others, forwards raw lines.
+_forward_progress() {
+  local last_msg=""
+  tail -f "$AGENT_LOG" 2>/dev/null | while IFS= read -r line; do
+    # Try to parse as JSON (stream-json format from Claude)
+    local type subtype tool_name msg=""
+    type=$(printf '%s' "$line" | jq -r '.type // empty' 2>/dev/null) || true
+
+    case "$type" in
+      assistant)
+        # Extract text content from assistant message
+        msg=$(printf '%s' "$line" | jq -r '
+          .message.content[]? |
+          if .type == "tool_use" then "Using " + .name
+          elif .type == "text" then .text
+          else empty end
+        ' 2>/dev/null | head -1 | head -c 200) || true
+        ;;
+      system)
+        subtype=$(printf '%s' "$line" | jq -r '.subtype // empty' 2>/dev/null) || true
+        case "$subtype" in
+          tool_output) msg=$(printf '%s' "$line" | jq -r '.tool_name // empty' 2>/dev/null | sed 's/^/Ran tool: /') || true ;;
+          init) msg="Agent initialized" ;;
+        esac
+        ;;
+      result)
+        msg=$(printf '%s' "$line" | jq -r '"Completed (" + .subtype + ")"' 2>/dev/null) || true
+        ;;
+      "")
+        # Not JSON — log raw line for non-stream-json agents (truncated)
+        if [[ -n "$line" && ${#line} -gt 5 ]]; then
+          msg=$(printf '%s' "$line" | head -c 200)
+        fi
+        ;;
+    esac
+
+    # Deduplicate and forward non-empty messages
+    if [[ -n "$msg" && "$msg" != "$last_msg" ]]; then
+      last_msg="$msg"
+      log "Agent: $msg"
+      # Best-effort POST to BFF progress endpoint (fire-and-forget)
+      curl -s -m 5 "$PROGRESS_URL" \
+        -H "Content-Type: application/json" \
+        -d "$(jq -n --arg m "$msg" '{message: $m}')" > /dev/null 2>&1 || true
+    fi
+  done
+}
+
+_forward_progress &
+WATCHER_PID=$!
 
 AGENT_EXIT=0
 case "$RDE_AUTONOMOUS_AGENT" in
   claude)
-    timeout "${RDE_RUN_TIMEOUT_MIN}m" runuser -u "$AGENT_USER" -- claude -p --dangerously-skip-permissions "$(cat "$TASK_FILE")" 2>&1 | tee "$AGENT_LOG" || AGENT_EXIT=${PIPESTATUS[0]}
+    timeout "${RDE_RUN_TIMEOUT_MIN}m" runuser -u "$AGENT_USER" -- \
+      claude -p --dangerously-skip-permissions --output-format stream-json --verbose \
+      "$(cat "$TASK_FILE")" >> "$AGENT_LOG" 2>&1 || AGENT_EXIT=$?
     ;;
   opencode)
-    timeout "${RDE_RUN_TIMEOUT_MIN}m" runuser -u "$AGENT_USER" -- opencode run "$(cat "$TASK_FILE")" 2>&1 | tee "$AGENT_LOG" || AGENT_EXIT=${PIPESTATUS[0]}
+    timeout "${RDE_RUN_TIMEOUT_MIN}m" runuser -u "$AGENT_USER" -- \
+      opencode run "$(cat "$TASK_FILE")" 2>&1 | tee -a "$AGENT_LOG" || AGENT_EXIT=${PIPESTATUS[0]}
     ;;
   codex)
-    timeout "${RDE_RUN_TIMEOUT_MIN}m" runuser -u "$AGENT_USER" -- codex --full-auto "$(cat "$TASK_FILE")" 2>&1 | tee "$AGENT_LOG" || AGENT_EXIT=${PIPESTATUS[0]}
+    timeout "${RDE_RUN_TIMEOUT_MIN}m" runuser -u "$AGENT_USER" -- \
+      codex --full-auto "$(cat "$TASK_FILE")" 2>&1 | tee -a "$AGENT_LOG" || AGENT_EXIT=${PIPESTATUS[0]}
     ;;
   gemini)
-    timeout "${RDE_RUN_TIMEOUT_MIN}m" runuser -u "$AGENT_USER" -- gemini -p "$(cat "$TASK_FILE")" 2>&1 | tee "$AGENT_LOG" || AGENT_EXIT=${PIPESTATUS[0]}
+    timeout "${RDE_RUN_TIMEOUT_MIN}m" runuser -u "$AGENT_USER" -- \
+      gemini -p "$(cat "$TASK_FILE")" 2>&1 | tee -a "$AGENT_LOG" || AGENT_EXIT=${PIPESTATUS[0]}
     ;;
   cursor)
-    timeout "${RDE_RUN_TIMEOUT_MIN}m" runuser -u "$AGENT_USER" -- cursor-agent "$(cat "$TASK_FILE")" 2>&1 | tee "$AGENT_LOG" || AGENT_EXIT=${PIPESTATUS[0]}
+    timeout "${RDE_RUN_TIMEOUT_MIN}m" runuser -u "$AGENT_USER" -- \
+      cursor-agent "$(cat "$TASK_FILE")" 2>&1 | tee -a "$AGENT_LOG" || AGENT_EXIT=${PIPESTATUS[0]}
     ;;
   *)
     log_error "Unknown agent: $RDE_AUTONOMOUS_AGENT"
     post_callback "failed" "" "Unknown agent: $RDE_AUTONOMOUS_AGENT"
-    exit 1
+    kill "$WATCHER_PID" 2>/dev/null; exit 1
     ;;
 esac
+
+# Stop the progress watcher
+kill "$WATCHER_PID" 2>/dev/null; wait "$WATCHER_PID" 2>/dev/null || true
 
 # Extract last 10 lines of agent output for failure diagnostics
 AGENT_TAIL=$(tail -10 "$AGENT_LOG" 2>/dev/null | head -c 500 || true)
