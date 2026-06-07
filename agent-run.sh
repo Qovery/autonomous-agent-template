@@ -149,81 +149,73 @@ chown "$AGENT_USER:$AGENT_USER" "$TASK_FILE"
 log "Running ${RDE_AUTONOMOUS_AGENT} agent as $AGENT_USER (timeout: ${RDE_RUN_TIMEOUT_MIN}m)..."
 
 AGENT_LOG="/tmp/agent-output.log"
+PROGRESS_FILE="/tmp/agent-progress.log"
 : > "$AGENT_LOG"
+: > "$PROGRESS_FILE"
+chown "$AGENT_USER:$AGENT_USER" "$PROGRESS_FILE"
 
 # Derive progress URL from callback URL (same base, /progress instead of /result)
 PROGRESS_URL="${RDE_RUN_CALLBACK_URL%/result}/progress"
 
-# Background watcher: tails the agent log file and forwards progress events to BFF.
-# For stream-json (Claude), parses JSON events. For others, forwards raw lines.
-_forward_progress() {
-  local last_msg=""
-  tail -f "$AGENT_LOG" 2>/dev/null | while IFS= read -r line; do
-    # Try to parse as JSON (stream-json format from Claude)
-    local type subtype tool_name msg=""
-    type=$(printf '%s' "$line" | jq -r '.type // empty' 2>/dev/null) || true
+# Inject CLAUDE.md instructions so Claude writes progress updates to a file.
+# Claude Code reads CLAUDE.md automatically from the working directory.
+cat > "$WORK_DIR/CLAUDE.md" <<'CLAUDEMD'
+# Agent Instructions
 
-    case "$type" in
-      assistant)
-        # Extract text content from assistant message
-        msg=$(printf '%s' "$line" | jq -r '
-          .message.content[]? |
-          if .type == "tool_use" then "Using " + .name
-          elif .type == "text" then .text
-          else empty end
-        ' 2>/dev/null | head -1 | head -c 200) || true
-        ;;
-      system)
-        subtype=$(printf '%s' "$line" | jq -r '.subtype // empty' 2>/dev/null) || true
-        case "$subtype" in
-          tool_output) msg=$(printf '%s' "$line" | jq -r '.tool_name // empty' 2>/dev/null | sed 's/^/Ran tool: /') || true ;;
-          init) msg="Agent initialized" ;;
-        esac
-        ;;
-      result)
-        msg=$(printf '%s' "$line" | jq -r '"Completed (" + .subtype + ")"' 2>/dev/null) || true
-        ;;
-      "")
-        # Not JSON — log raw line for non-stream-json agents (truncated)
-        if [[ -n "$line" && ${#line} -gt 5 ]]; then
-          msg=$(printf '%s' "$line" | head -c 200)
-        fi
-        ;;
-    esac
+After completing each significant step (analyzing code, editing a file, creating a file,
+running a command), append a short one-line status to /tmp/agent-progress.log.
+Use: echo "your status message" >> /tmp/agent-progress.log
 
-    # Deduplicate and forward non-empty messages
-    if [[ -n "$msg" && "$msg" != "$last_msg" ]]; then
-      last_msg="$msg"
-      log "Agent: $msg"
-      # Best-effort POST to BFF progress endpoint (fire-and-forget)
+Examples:
+  echo "Analyzing project structure" >> /tmp/agent-progress.log
+  echo "Editing public/css/style.css - changing background color" >> /tmp/agent-progress.log
+  echo "Creating public/js/matrix.js" >> /tmp/agent-progress.log
+  echo "Running tests" >> /tmp/agent-progress.log
+
+Keep messages short (under 100 chars). Do not skip this step.
+CLAUDEMD
+chown "$AGENT_USER:$AGENT_USER" "$WORK_DIR/CLAUDE.md"
+
+# Background: heartbeat logger + progress watcher.
+# - Logs heartbeat every 2 min so container logs show the agent is alive
+# - Tails progress file and forwards updates to BFF -> Linear agent session
+_progress_watcher() {
+  local start=$SECONDS last_msg=""
+
+  # Tail progress file (written by Claude via CLAUDE.md instructions)
+  tail -f "$PROGRESS_FILE" 2>/dev/null | while IFS= read -r line; do
+    if [[ -n "$line" && "$line" != "$last_msg" ]]; then
+      last_msg="$line"
+      log "Agent: $line"
       curl -s -m 5 "$PROGRESS_URL" \
         -H "Content-Type: application/json" \
-        -d "$(jq -n --arg m "$msg" '{message: $m}')" > /dev/null 2>&1 || true
+        -d "$(jq -n --arg m "$line" '{message: $m}')" > /dev/null 2>&1 || true
     fi
-  done
+  done &
+  local TAIL_PID=$!
+
+  # Heartbeat: log every 2 minutes so container logs don't look dead
+  while kill -0 $$ 2>/dev/null; do
+    sleep 120
+    local elapsed=$(( (SECONDS - start) / 60 ))
+    log "Agent still working... (${elapsed}m elapsed)"
+  done &
+  local BEAT_PID=$!
+
+  # Wait for parent to kill us
+  wait "$TAIL_PID" 2>/dev/null || true
+  kill "$BEAT_PID" 2>/dev/null || true
 }
 
-_forward_progress &
+_progress_watcher &
 WATCHER_PID=$!
 
 AGENT_EXIT=0
 case "$RDE_AUTONOMOUS_AGENT" in
   claude)
-    # Use script(1) to allocate a pty so Claude flushes stream-json events
-    # immediately (pipe stdout triggers full 4KB buffering in Bun's runtime).
-    # -E never: suppress pty input echo (otherwise the prompt is echoed to stdout)
-    # A wrapper script avoids stdin EOF issues and shell quoting problems.
-    CLAUDE_WRAPPER="/tmp/run-claude.sh"
-    cat > "$CLAUDE_WRAPPER" <<'CWEOF'
-#!/bin/bash
-exec claude -p --dangerously-skip-permissions --output-format stream-json --verbose "$(cat /tmp/task.md)"
-CWEOF
-    chmod +x "$CLAUDE_WRAPPER"
-    chown "$AGENT_USER:$AGENT_USER" "$CLAUDE_WRAPPER"
-
     timeout "${RDE_RUN_TIMEOUT_MIN}m" runuser -u "$AGENT_USER" -- \
-      script -qefc "$CLAUDE_WRAPPER" -E never /dev/null \
-      2>&1 | tee -a "$AGENT_LOG" || AGENT_EXIT=${PIPESTATUS[0]}
+      claude -p --dangerously-skip-permissions \
+      "$(cat "$TASK_FILE")" 2>&1 | tee -a "$AGENT_LOG" || AGENT_EXIT=${PIPESTATUS[0]}
     ;;
   opencode)
     timeout "${RDE_RUN_TIMEOUT_MIN}m" runuser -u "$AGENT_USER" -- \
