@@ -1,7 +1,7 @@
 FROM ubuntu:24.04
 
 # curl is needed to download install.sh (not pre-installed in ubuntu:24.04)
-RUN apt-get update -qq && apt-get install -y -qq curl && rm -rf /var/lib/apt/lists/*
+RUN apt-get update -qq && apt-get install -y -qq curl gnupg && rm -rf /var/lib/apt/lists/*
 
 # Copy the RDE config to disable web IDE components before running install.sh
 COPY .config.rde.qovery.yml /tmp/.config.rde.qovery.yml
