@@ -1,5 +1,10 @@
 FROM ubuntu:24.04
 
+# Prevent apt/debconf from prompting interactively (e.g., tzdata).
+# Without this, debconf reads from stdin and consumes the rest of install.sh
+# when piped via `curl ... | bash`.
+ENV DEBIAN_FRONTEND=noninteractive
+
 # curl is needed to download install.sh (not pre-installed in ubuntu:24.04)
 RUN apt-get update -qq && apt-get install -y -qq curl gnupg && rm -rf /var/lib/apt/lists/*
 
