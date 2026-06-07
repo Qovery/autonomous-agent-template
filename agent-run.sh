@@ -146,6 +146,10 @@ AGENT_USER="coder"
 chown -R "$AGENT_USER:$AGENT_USER" /repos
 chown "$AGENT_USER:$AGENT_USER" "$TASK_FILE"
 
+# Fix git safe.directory: repo was cloned by root then chowned to coder.
+# Git 2.36+ blocks operations when the repo owner differs from the runner.
+runuser -u "$AGENT_USER" -- git config --global --add safe.directory '*'
+
 log "Running ${RDE_AUTONOMOUS_AGENT} agent as $AGENT_USER (timeout: ${RDE_RUN_TIMEOUT_MIN}m)..."
 
 AGENT_LOG="/tmp/agent-output.log"
@@ -157,24 +161,8 @@ chown "$AGENT_USER:$AGENT_USER" "$PROGRESS_FILE"
 # Derive progress URL from callback URL (same base, /progress instead of /result)
 PROGRESS_URL="${RDE_RUN_CALLBACK_URL%/result}/progress"
 
-# Inject CLAUDE.md instructions so Claude writes progress updates to a file.
-# Claude Code reads CLAUDE.md automatically from the working directory.
-cat > "$WORK_DIR/CLAUDE.md" <<'CLAUDEMD'
-# Agent Instructions
-
-After completing each significant step (analyzing code, editing a file, creating a file,
-running a command), append a short one-line status to /tmp/agent-progress.log.
-Use: echo "your status message" >> /tmp/agent-progress.log
-
-Examples:
-  echo "Analyzing project structure" >> /tmp/agent-progress.log
-  echo "Editing public/css/style.css - changing background color" >> /tmp/agent-progress.log
-  echo "Creating public/js/matrix.js" >> /tmp/agent-progress.log
-  echo "Running tests" >> /tmp/agent-progress.log
-
-Keep messages short (under 100 chars). Do not skip this step.
-CLAUDEMD
-chown "$AGENT_USER:$AGENT_USER" "$WORK_DIR/CLAUDE.md"
+# System prompt addendum for progress tracking (more reliable than CLAUDE.md).
+PROGRESS_PROMPT='IMPORTANT: After EACH tool use (Read, Edit, Write, Bash), you MUST run this Bash command: echo "<short status>" >> /tmp/agent-progress.log. Example: echo "Edited style.css - changed background" >> /tmp/agent-progress.log. Start NOW by running: echo "Starting work" >> /tmp/agent-progress.log'
 
 # Background: heartbeat logger + progress watcher.
 # - Logs heartbeat every 2 min so container logs show the agent is alive
@@ -215,6 +203,7 @@ case "$RDE_AUTONOMOUS_AGENT" in
   claude)
     timeout "${RDE_RUN_TIMEOUT_MIN}m" runuser -u "$AGENT_USER" -- \
       claude -p --dangerously-skip-permissions \
+      --append-system-prompt "$PROGRESS_PROMPT" \
       "$(cat "$TASK_FILE")" 2>&1 | tee -a "$AGENT_LOG" || AGENT_EXIT=${PIPESTATUS[0]}
     ;;
   opencode)
