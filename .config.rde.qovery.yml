@@ -1,0 +1,34 @@
+# Qovery Autonomous Agent Template
+# Disables web IDE components not needed for headless autonomous mode.
+# The agent runs Claude Code / OpenCode headlessly — no browser-based editing.
+
+rde_user: coder
+
+# AI agents
+claude_code: true
+opencode: true
+codex: true
+cursor: true
+
+# Dev tooling
+nodejs: true
+python: true
+ruby: true
+go: true
+gh: true
+zellij: true
+ttyd: true
+qovery_cli: true
+rtk: true
+qovery_skills: true
+fzf: true
+ripgrep: true
+
+# Disable: web IDE components (no browser-based editing in autonomous mode)
+code_server: false
+entrypoint: false
+resources: false
+builder_startup_extension: false
+htop: false
+wget: false
+tree: false
