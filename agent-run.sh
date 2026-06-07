@@ -148,7 +148,8 @@ chown "$AGENT_USER:$AGENT_USER" "$TASK_FILE"
 
 # Fix git safe.directory: repo was cloned by root then chowned to coder.
 # Git 2.36+ blocks operations when the repo owner differs from the runner.
-runuser -u "$AGENT_USER" -- git config --global --add safe.directory '*'
+# Use --system (writes to /etc/gitconfig) since coder's home may not be writable.
+git config --system --add safe.directory '*'
 
 log "Running ${RDE_AUTONOMOUS_AGENT} agent as $AGENT_USER (timeout: ${RDE_RUN_TIMEOUT_MIN}m)..."
 
