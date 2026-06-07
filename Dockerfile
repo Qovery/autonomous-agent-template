@@ -15,7 +15,7 @@ COPY .config.rde.qovery.yml /tmp/.config.rde.qovery.yml
 # The config file disables code-server, the standard entrypoint, and other
 # interactive-only components that aren't needed for headless autonomous mode.
 # Bump RDE_INSTALL_VERSION to force a fresh install.sh run (cache bust).
-ARG RDE_INSTALL_VERSION=2
+ARG RDE_INSTALL_VERSION=3
 RUN export RDE_CONFIG=/tmp/.config.rde.qovery.yml && \
     curl -fsSL https://rde.qovery.com/install.sh | bash
 
