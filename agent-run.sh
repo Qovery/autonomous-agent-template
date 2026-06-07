@@ -140,26 +140,32 @@ log "Working on branch: $BRANCH (in $WORK_DIR)"
 
 # ── Step 3: Run the AI agent headless ────────────────────────────────────────
 
-log "Running ${RDE_AUTONOMOUS_AGENT} agent (timeout: ${RDE_RUN_TIMEOUT_MIN}m)..."
+# Claude Code refuses --dangerously-skip-permissions when running as root.
+# Hand ownership of the workspace to the coder user and run agents as coder.
+AGENT_USER="coder"
+chown -R "$AGENT_USER:$AGENT_USER" /repos
+chown "$AGENT_USER:$AGENT_USER" "$TASK_FILE"
+
+log "Running ${RDE_AUTONOMOUS_AGENT} agent as $AGENT_USER (timeout: ${RDE_RUN_TIMEOUT_MIN}m)..."
 
 AGENT_LOG="/tmp/agent-output.log"
 
 AGENT_EXIT=0
 case "$RDE_AUTONOMOUS_AGENT" in
   claude)
-    timeout "${RDE_RUN_TIMEOUT_MIN}m" claude -p --dangerously-skip-permissions "$(cat "$TASK_FILE")" 2>&1 | tee "$AGENT_LOG" || AGENT_EXIT=${PIPESTATUS[0]}
+    timeout "${RDE_RUN_TIMEOUT_MIN}m" runuser -u "$AGENT_USER" -- claude -p --dangerously-skip-permissions "$(cat "$TASK_FILE")" 2>&1 | tee "$AGENT_LOG" || AGENT_EXIT=${PIPESTATUS[0]}
     ;;
   opencode)
-    timeout "${RDE_RUN_TIMEOUT_MIN}m" opencode run "$(cat "$TASK_FILE")" 2>&1 | tee "$AGENT_LOG" || AGENT_EXIT=${PIPESTATUS[0]}
+    timeout "${RDE_RUN_TIMEOUT_MIN}m" runuser -u "$AGENT_USER" -- opencode run "$(cat "$TASK_FILE")" 2>&1 | tee "$AGENT_LOG" || AGENT_EXIT=${PIPESTATUS[0]}
     ;;
   codex)
-    timeout "${RDE_RUN_TIMEOUT_MIN}m" codex --full-auto "$(cat "$TASK_FILE")" 2>&1 | tee "$AGENT_LOG" || AGENT_EXIT=${PIPESTATUS[0]}
+    timeout "${RDE_RUN_TIMEOUT_MIN}m" runuser -u "$AGENT_USER" -- codex --full-auto "$(cat "$TASK_FILE")" 2>&1 | tee "$AGENT_LOG" || AGENT_EXIT=${PIPESTATUS[0]}
     ;;
   gemini)
-    timeout "${RDE_RUN_TIMEOUT_MIN}m" gemini -p "$(cat "$TASK_FILE")" 2>&1 | tee "$AGENT_LOG" || AGENT_EXIT=${PIPESTATUS[0]}
+    timeout "${RDE_RUN_TIMEOUT_MIN}m" runuser -u "$AGENT_USER" -- gemini -p "$(cat "$TASK_FILE")" 2>&1 | tee "$AGENT_LOG" || AGENT_EXIT=${PIPESTATUS[0]}
     ;;
   cursor)
-    timeout "${RDE_RUN_TIMEOUT_MIN}m" cursor-agent "$(cat "$TASK_FILE")" 2>&1 | tee "$AGENT_LOG" || AGENT_EXIT=${PIPESTATUS[0]}
+    timeout "${RDE_RUN_TIMEOUT_MIN}m" runuser -u "$AGENT_USER" -- cursor-agent "$(cat "$TASK_FILE")" 2>&1 | tee "$AGENT_LOG" || AGENT_EXIT=${PIPESTATUS[0]}
     ;;
   *)
     log_error "Unknown agent: $RDE_AUTONOMOUS_AGENT"
