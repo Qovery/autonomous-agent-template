@@ -149,7 +149,7 @@ log "Running ${RDE_AUTONOMOUS_AGENT} agent (timeout: ${RDE_RUN_TIMEOUT_MIN}m)...
 AGENT_EXIT=0
 case "$RDE_AUTONOMOUS_AGENT" in
   claude)
-    timeout "${RDE_RUN_TIMEOUT_MIN}m" claude -p "$(cat "$TASK_FILE")" || AGENT_EXIT=$?
+    timeout "${RDE_RUN_TIMEOUT_MIN}m" claude -p --dangerously-skip-permissions "$(cat "$TASK_FILE")" || AGENT_EXIT=$?
     ;;
   opencode)
     timeout "${RDE_RUN_TIMEOUT_MIN}m" opencode run "$(cat "$TASK_FILE")" || AGENT_EXIT=$?
