@@ -57,7 +57,6 @@ fi
 
 if [[ "$REPO_COUNT" -eq 0 ]]; then
   log_error "No repositories configured (REPO_COUNT=0 and no REPO_1_URL or BLUEPRINT_GIT_REPOSITORY set)"
-  linear_comment "$LINEAR_ISSUE_ID" "❌ **Agent failed:** No git repositories configured on the blueprint."
   post_callback "failed" "" "No git repos configured"
   exit 1
 fi
@@ -69,7 +68,6 @@ REPO_1_TOKEN="${REPO_1_TOKEN:-${REPO_TOKEN:-}}"
 
 if [[ -z "$REPO_1_URL" ]]; then
   log_error "REPO_1_URL is empty — no repository to clone"
-  linear_comment "$LINEAR_ISSUE_ID" "❌ **Agent failed:** Git repository URL not configured on the blueprint."
   post_callback "failed" "" "Missing git repo URL"
   exit 1
 fi
@@ -112,7 +110,6 @@ for i in $(seq 1 "$REPO_COUNT"); do
 
   if ! clone_repo "$repo_url" "$repo_token" "$provider" "$dest" "$repo_branch"; then
     log_error "Failed to clone repository $i: $repo_url"
-    linear_comment "$LINEAR_ISSUE_ID" "❌ **Agent failed:** Could not clone repository \`$repo_url\`."
     post_callback "failed" "" "Failed to clone repository $i"
     exit 1
   fi
@@ -124,7 +121,6 @@ for i in $(seq 1 "$REPO_COUNT"); do
 
   if ! git checkout -b "$BRANCH"; then
     log_error "Failed to create branch: $BRANCH"
-    linear_comment "$LINEAR_ISSUE_ID" "❌ **Agent failed:** Could not create branch \`$BRANCH\`."
     post_callback "failed" "" "Failed to create branch"
     exit 1
   fi
@@ -146,50 +142,50 @@ log "Working on branch: $BRANCH (in $WORK_DIR)"
 
 log "Running ${RDE_AUTONOMOUS_AGENT} agent (timeout: ${RDE_RUN_TIMEOUT_MIN}m)..."
 
+AGENT_LOG="/tmp/agent-output.log"
+
 AGENT_EXIT=0
 case "$RDE_AUTONOMOUS_AGENT" in
   claude)
-    timeout "${RDE_RUN_TIMEOUT_MIN}m" claude -p --dangerously-skip-permissions "$(cat "$TASK_FILE")" || AGENT_EXIT=$?
+    timeout "${RDE_RUN_TIMEOUT_MIN}m" claude -p --dangerously-skip-permissions "$(cat "$TASK_FILE")" 2>&1 | tee "$AGENT_LOG" || AGENT_EXIT=${PIPESTATUS[0]}
     ;;
   opencode)
-    timeout "${RDE_RUN_TIMEOUT_MIN}m" opencode run "$(cat "$TASK_FILE")" || AGENT_EXIT=$?
+    timeout "${RDE_RUN_TIMEOUT_MIN}m" opencode run "$(cat "$TASK_FILE")" 2>&1 | tee "$AGENT_LOG" || AGENT_EXIT=${PIPESTATUS[0]}
     ;;
   codex)
-    timeout "${RDE_RUN_TIMEOUT_MIN}m" codex --full-auto "$(cat "$TASK_FILE")" || AGENT_EXIT=$?
+    timeout "${RDE_RUN_TIMEOUT_MIN}m" codex --full-auto "$(cat "$TASK_FILE")" 2>&1 | tee "$AGENT_LOG" || AGENT_EXIT=${PIPESTATUS[0]}
     ;;
   gemini)
-    timeout "${RDE_RUN_TIMEOUT_MIN}m" gemini -p "$(cat "$TASK_FILE")" || AGENT_EXIT=$?
+    timeout "${RDE_RUN_TIMEOUT_MIN}m" gemini -p "$(cat "$TASK_FILE")" 2>&1 | tee "$AGENT_LOG" || AGENT_EXIT=${PIPESTATUS[0]}
     ;;
   cursor)
-    timeout "${RDE_RUN_TIMEOUT_MIN}m" cursor-agent "$(cat "$TASK_FILE")" || AGENT_EXIT=$?
+    timeout "${RDE_RUN_TIMEOUT_MIN}m" cursor-agent "$(cat "$TASK_FILE")" 2>&1 | tee "$AGENT_LOG" || AGENT_EXIT=${PIPESTATUS[0]}
     ;;
   *)
     log_error "Unknown agent: $RDE_AUTONOMOUS_AGENT"
-    linear_comment "$LINEAR_ISSUE_ID" "❌ **Agent failed:** Unknown agent type \`$RDE_AUTONOMOUS_AGENT\`."
     post_callback "failed" "" "Unknown agent: $RDE_AUTONOMOUS_AGENT"
     exit 1
     ;;
 esac
 
+# Extract last 10 lines of agent output for failure diagnostics
+AGENT_TAIL=$(tail -10 "$AGENT_LOG" 2>/dev/null | head -c 500 || true)
+
 # Check for timeout (exit code 124)
 if [[ "$AGENT_EXIT" -eq 124 ]]; then
   log_error "Agent timed out after ${RDE_RUN_TIMEOUT_MIN} minutes"
-  linear_comment "$LINEAR_ISSUE_ID" "⏱ **Agent timed out** after ${RDE_RUN_TIMEOUT_MIN} minutes."
-  if [[ -n "${RDE_LINEAR_STATE_FAILED_ID:-}" ]]; then
-    linear_set_state "$LINEAR_ISSUE_ID" "$RDE_LINEAR_STATE_FAILED_ID"
-  fi
-  post_callback "timed_out" "" ""
+  post_callback "timed_out" "" "Agent timed out after ${RDE_RUN_TIMEOUT_MIN}m"
   exit 1
 fi
 
 # Check for agent failure
 if [[ "$AGENT_EXIT" -ne 0 ]]; then
   log_error "Agent exited with code $AGENT_EXIT"
-  linear_comment "$LINEAR_ISSUE_ID" "❌ **Agent failed** with exit code $AGENT_EXIT."
-  if [[ -n "${RDE_LINEAR_STATE_FAILED_ID:-}" ]]; then
-    linear_set_state "$LINEAR_ISSUE_ID" "$RDE_LINEAR_STATE_FAILED_ID"
+  REASON="Agent exited with code $AGENT_EXIT"
+  if [[ -n "$AGENT_TAIL" ]]; then
+    REASON="${REASON}. Last output: ${AGENT_TAIL}"
   fi
-  post_callback "failed" "" "Agent exited with code $AGENT_EXIT"
+  post_callback "failed" "" "$REASON"
   exit 1
 fi
 
@@ -233,7 +229,6 @@ for i in $(seq 1 "$REPO_COUNT"); do
 
   if ! push_branch "$repo_url" "$repo_token" "$provider" "$BRANCH"; then
     log_error "Failed to push branch in repo $i ($repo_name)"
-    linear_comment "$LINEAR_ISSUE_ID" "❌ **Agent failed:** Could not push branch \`$BRANCH\` to \`$repo_name\`."
     post_callback "failed" "" "Failed to push branch in repo $repo_name"
     exit 1
   fi
@@ -256,28 +251,13 @@ done
 
 if [[ "$ANY_CHANGES" == false ]]; then
   log "No changes made by the agent — nothing to push"
-  linear_comment "$LINEAR_ISSUE_ID" "ℹ️ **Agent completed** but made no code changes."
   post_callback "failed" "" "Agent made no code changes"
   exit 0
 fi
 
-# ── Step 5: Update Linear issue ──────────────────────────────────────────────
-
-if [[ ${#PR_URLS[@]} -gt 0 ]]; then
-  PR_LINKS=""
-  for url in "${PR_URLS[@]}"; do
-    PR_LINKS="${PR_LINKS}\n- [View pull request](${url})"
-  done
-  linear_comment "$LINEAR_ISSUE_ID" "$(printf '✅ **Agent complete** — PR(s) opened:%b' "$PR_LINKS")"
-else
-  linear_comment "$LINEAR_ISSUE_ID" "⚠️ **Agent pushed branch** \`$BRANCH\` but failed to create PR(s). Please create them manually."
-fi
-
-if [[ -n "${RDE_LINEAR_STATE_REVIEW_ID:-}" ]]; then
-  linear_set_state "$LINEAR_ISSUE_ID" "$RDE_LINEAR_STATE_REVIEW_ID"
-fi
-
-# ── Step 6: Call back the BFF ────────────────────────────────────────────────
+# ── Step 5: Call back the BFF ────────────────────────────────────────────────
+# The BFF callback handler posts Linear comments, emits agent activities,
+# and manages issue state transitions — no need to duplicate that here.
 
 # Report the first PR URL (primary repo) to the callback
 FIRST_PR="${PR_URLS[0]:-}"
