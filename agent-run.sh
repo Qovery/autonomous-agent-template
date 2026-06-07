@@ -211,7 +211,7 @@ case "$RDE_AUTONOMOUS_AGENT" in
   claude)
     timeout "${RDE_RUN_TIMEOUT_MIN}m" runuser -u "$AGENT_USER" -- \
       claude -p --dangerously-skip-permissions --output-format stream-json --verbose \
-      "$(cat "$TASK_FILE")" >> "$AGENT_LOG" 2>&1 || AGENT_EXIT=$?
+      "$(cat "$TASK_FILE")" 2>&1 | tee -a "$AGENT_LOG" || AGENT_EXIT=${PIPESTATUS[0]}
     ;;
   opencode)
     timeout "${RDE_RUN_TIMEOUT_MIN}m" runuser -u "$AGENT_USER" -- \
