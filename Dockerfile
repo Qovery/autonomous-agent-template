@@ -19,8 +19,8 @@ ARG RDE_INSTALL_VERSION=3
 RUN export RDE_CONFIG=/tmp/.config.rde.qovery.yml && \
     curl -fsSL https://rde.qovery.com/install.sh | bash
 
-# Install Claude Agent SDK for programmatic streaming execution
-RUN npm install -g @anthropic-ai/claude-agent-sdk && npm cache clean --force
+# Install agent SDKs for programmatic streaming execution
+RUN npm install -g @anthropic-ai/claude-agent-sdk @openai/codex-sdk && npm cache clean --force
 
 # Install our autonomous agent scripts
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh

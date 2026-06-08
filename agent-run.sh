@@ -179,8 +179,12 @@ case "$RDE_AUTONOMOUS_AGENT" in
     AGENT_TAIL=$(tail -10 "$AGENT_LOG" 2>/dev/null | head -c 500 || true)
     ;;
   codex)
+    # ── Codex SDK execution ────────────────────────────────────────────────
+    # Uses @openai/codex-sdk for programmatic streaming (same pattern as Claude).
     timeout "${RDE_RUN_TIMEOUT_MIN}m" runuser -u "$AGENT_USER" -- \
-      codex --full-auto "$(cat "$TASK_FILE")" 2>&1 | tee -a "$AGENT_LOG" || AGENT_EXIT=${PIPESTATUS[0]}
+      env TASK_FILE="$TASK_FILE" PROGRESS_URL="$PROGRESS_URL" WORK_DIR="$WORK_DIR" \
+      NODE_PATH="/usr/lib/node_modules" \
+      node /usr/local/lib/agent/codex-runner.js 2>&1 | tee -a "$AGENT_LOG" || AGENT_EXIT=${PIPESTATUS[0]}
     AGENT_TAIL=$(tail -10 "$AGENT_LOG" 2>/dev/null | head -c 500 || true)
     ;;
   gemini)
