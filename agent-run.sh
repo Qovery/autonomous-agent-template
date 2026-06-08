@@ -86,6 +86,38 @@ fi
 ISSUE_TITLE=$(head -1 "$TASK_FILE" | sed 's/^# //')
 log "Issue: ${LINEAR_ISSUE_KEY} — ${ISSUE_TITLE}"
 
+# ── Step 1b: Prepend the system prompt to the task ───────────────────────────
+# The system prompt can be overridden via RDE_AGENT_SYSTEM_PROMPT env var
+# (set in the blueprint). Falls back to the bundled default.
+
+DEFAULT_SYSTEM_PROMPT="$SCRIPT_DIR/system-prompt.md"
+SYSTEM_PROMPT_FILE="/tmp/system-prompt.md"
+
+if [[ -n "${RDE_AGENT_SYSTEM_PROMPT:-}" ]]; then
+  log "Using custom system prompt from RDE_AGENT_SYSTEM_PROMPT"
+  echo "$RDE_AGENT_SYSTEM_PROMPT" > "$SYSTEM_PROMPT_FILE"
+elif [[ -f "$DEFAULT_SYSTEM_PROMPT" ]]; then
+  log "Using default system prompt from $DEFAULT_SYSTEM_PROMPT"
+  cp "$DEFAULT_SYSTEM_PROMPT" "$SYSTEM_PROMPT_FILE"
+else
+  log "No system prompt found — running without one"
+  SYSTEM_PROMPT_FILE=""
+fi
+
+if [[ -n "$SYSTEM_PROMPT_FILE" ]]; then
+  ORIGINAL_TASK=$(cat "$TASK_FILE")
+  {
+    cat "$SYSTEM_PROMPT_FILE"
+    echo ""
+    echo "---"
+    echo ""
+    echo "# Task Specification"
+    echo ""
+    echo "$ORIGINAL_TASK"
+  } > "$TASK_FILE"
+  log "System prompt prepended to task file"
+fi
+
 # ── Step 2: Clone repo(s) + create branch ────────────────────────────────────
 
 BRANCH_SLUG=$(echo "$ISSUE_TITLE" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//' | sed 's/-$//' | cut -c1-40)

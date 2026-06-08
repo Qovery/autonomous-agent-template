@@ -22,10 +22,11 @@ RUN export RDE_CONFIG=/tmp/.config.rde.qovery.yml && \
 # Install agent SDKs for programmatic streaming execution
 RUN npm install -g @anthropic-ai/claude-agent-sdk @openai/codex-sdk && npm cache clean --force
 
-# Install our autonomous agent scripts
+# Install our autonomous agent scripts + default system prompt
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY agent-run.sh /usr/local/bin/agent-run.sh
 COPY lib/ /usr/local/lib/agent/
+COPY system-prompt.md /usr/local/lib/agent/system-prompt.md
 RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/agent-run.sh \
     && chmod +x /usr/local/lib/agent/*.sh
 
