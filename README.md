@@ -1,18 +1,24 @@
 # Qovery Autonomous Agent Template
 
-A Docker image template for running autonomous AI coding agents on [Qovery RDE](https://www.qovery.com). When deployed as a Qovery environment, the container automatically picks up a Linear issue, runs an AI agent (Claude Code or OpenCode) to fix it, opens a pull request, and exits.
+A Docker image template for running autonomous AI coding agents on [Qovery RDE](https://www.qovery.com). When deployed as a Qovery environment, the container automatically picks up an issue from your tracker (**Linear** or **Jira**), runs an AI agent (Claude Code or OpenCode) to fix it, opens a pull request, and exits.
+
+The image ships both integrations. At startup, `entrypoint.sh` auto-detects the
+provider from the injected env vars (`JIRA_*` → Jira, else `LINEAR_*` → Linear)
+and runs the matching `agent-run.sh`. Provider-agnostic machinery (git/PR, agent
+runners, callback) is shared in `lib/`; each provider's folder (`linear/`,
+`jira/`) holds only its `agent-run.sh` + API helper.
 
 ## How it works
 
-1. The [RDE Portal](https://github.com/qovery/experiment/rde-portal) polls Linear for issues labeled `qovery-agent-ready`
+1. The [RDE Portal](https://github.com/qovery/experiment/rde-portal) polls your tracker (Linear or Jira) for issues labeled `qovery-agent-ready`
 2. For each issue, it launches an ephemeral Qovery environment using this template
 3. The container's entrypoint:
    - Starts the agent governance proxy (if configured)
-   - Fetches the Linear issue description
+   - Detects the ticket provider and fetches the issue description
    - Clones the target repo and creates a branch
    - Runs the AI agent headless (`claude -p` or `opencode run`)
    - Commits, pushes, and opens a PR
-   - Comments the PR link on the Linear issue
+   - Comments the PR link on the issue
    - Calls back the portal to record the result and stop the environment
 
 ## Quick start
@@ -46,14 +52,14 @@ docker build -t my-autonomous-agent .
 
 These are injected automatically by the RDE Portal when it launches the environment. You don't need to set them manually.
 
+### Common
+
 | Variable | Description |
 |----------|-------------|
-| `LINEAR_API_TOKEN` | Linear API token (secret) |
-| `LINEAR_ISSUE_ID` | Linear issue node ID to work on |
-| `LINEAR_ISSUE_KEY` | Human-readable key (e.g., `ENG-123`) |
 | `RDE_AUTONOMOUS_AGENT` | `claude` or `opencode` |
 | `RDE_RUN_CALLBACK_URL` | BFF callback URL for reporting results |
 | `RDE_RUN_TIMEOUT_MIN` | Hard timeout for the agent (minutes) |
+| `RDE_TICKET_PROVIDER` | Optional override: `linear` or `jira`. If unset, auto-detected from the provider vars below |
 | `ANTHROPIC_API_KEY` | For Claude Code authentication |
 | `REPO_COUNT` | Number of repositories to clone |
 | `REPO_URL` / `REPO_1_URL` | Primary repo URL |
@@ -63,9 +69,26 @@ These are injected automatically by the RDE Portal when it launches the environm
 | `REPO_N_BRANCH` | Additional repo branches |
 | `REPO_N_TOKEN` | Additional repo tokens |
 
-## Controlling the agent from Linear
+### Linear (when using Linear)
 
-Once the agent is running, you can control it by commenting on the Linear issue:
+| Variable | Description |
+|----------|-------------|
+| `LINEAR_API_TOKEN` | Linear API token (secret) |
+| `LINEAR_ISSUE_ID` | Linear issue node ID to work on |
+| `LINEAR_ISSUE_KEY` | Human-readable key (e.g., `ENG-123`) |
+
+### Jira (when using Jira Cloud)
+
+| Variable | Description |
+|----------|-------------|
+| `JIRA_BASE_URL` | Site base URL (e.g., `https://your-org.atlassian.net`) |
+| `JIRA_EMAIL` | Atlassian account email (Basic auth username) |
+| `JIRA_API_TOKEN` | Atlassian API token (secret) |
+| `JIRA_ISSUE_KEY` | Issue key to work on (e.g., `PROJ-123`) — also the REST path id |
+
+## Controlling the agent from your tracker
+
+Once the agent is running, you can control it by commenting on the issue (Linear or Jira):
 
 | Command | Action |
 |---------|--------|

@@ -3,9 +3,9 @@
 # Qovery Autonomous Agent — Entrypoint
 #
 # This is a self-contained entrypoint for autonomous agent workspaces.
-# It starts the governance proxy (if configured), then runs agent-run.sh
-# which performs the full autonomous cycle:
-#   fetch Linear issue -> clone repo -> run AI agent -> push -> PR -> callback
+# It starts the governance proxy (if configured), then runs the provider's
+# agent-run.sh which performs the full autonomous cycle:
+#   fetch issue -> clone repo -> run AI agent -> push -> PR -> callback
 # ────────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
@@ -30,7 +30,30 @@ else
   log "No governance proxy configured (RDE_PROXY_SCRIPT_GZ_B64 not set)"
 fi
 
-# ── Step 2: Run the autonomous agent flow ────────────────────────────────────
+# ── Step 2: Select the ticket provider ───────────────────────────────────────
+# Auto-detect from the injected env vars, unless RDE_TICKET_PROVIDER overrides.
 
-log "Starting autonomous agent run..."
-exec /usr/local/bin/agent-run.sh
+PROVIDER="${RDE_TICKET_PROVIDER:-}"
+if [[ -z "$PROVIDER" ]]; then
+  if [[ -n "${JIRA_ISSUE_KEY:-}${JIRA_BASE_URL:-}" ]]; then
+    PROVIDER=jira
+  elif [[ -n "${LINEAR_ISSUE_ID:-}${LINEAR_ISSUE_KEY:-}" ]]; then
+    PROVIDER=linear
+  fi
+fi
+
+if [[ -z "$PROVIDER" ]]; then
+  log_error "No ticket provider env vars set (expected JIRA_* or LINEAR_*)"
+  exit 1
+fi
+
+AGENT_RUN="/usr/local/lib/agent/${PROVIDER}/agent-run.sh"
+if [[ ! -x "$AGENT_RUN" ]]; then
+  log_error "Unknown ticket provider '$PROVIDER' — $AGENT_RUN not found"
+  exit 1
+fi
+
+# ── Step 3: Run the autonomous agent flow ─────────────────────────────────────
+
+log "Starting autonomous agent run (provider: $PROVIDER)..."
+exec "$AGENT_RUN"

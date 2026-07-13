@@ -22,13 +22,16 @@ RUN export RDE_CONFIG=/tmp/.config.rde.qovery.yml && \
 # Install agent SDKs for programmatic streaming execution
 RUN npm install -g @anthropic-ai/claude-agent-sdk @openai/codex-sdk && npm cache clean --force
 
-# Install our autonomous agent scripts + default system prompt
+# Install our autonomous agent scripts + default system prompt.
+# Shared (provider-agnostic) helpers live in lib/; each ticket provider has its
+# own folder (linear/, jira/) holding agent-run.sh + its API helper.
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
-COPY agent-run.sh /usr/local/bin/agent-run.sh
 COPY lib/ /usr/local/lib/agent/
+COPY linear/ /usr/local/lib/agent/linear/
+COPY jira/ /usr/local/lib/agent/jira/
 COPY system-prompt.md /usr/local/lib/agent/system-prompt.md
-RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/agent-run.sh \
-    && chmod +x /usr/local/lib/agent/*.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh \
+    && chmod +x /usr/local/lib/agent/*.sh /usr/local/lib/agent/*/*.sh
 
 # Create repo clone directory for agent-run.sh
 RUN mkdir -p /repos && chown coder:coder /repos
