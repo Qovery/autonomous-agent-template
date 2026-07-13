@@ -32,6 +32,13 @@ build_authed_url() {
   local token="$2"
   local provider="${3:-$(detect_git_provider "$repo_url")}"
 
+  # Default to https when the URL has no scheme — otherwise git reads the ':' in
+  # the token userinfo as scp/SSH syntax and fails with "cannot run ssh".
+  case "$repo_url" in
+    http://*|https://*) ;;
+    *) repo_url="https://${repo_url}" ;;
+  esac
+
   # Strip any existing auth from the URL and extract components
   local clean_url
   clean_url=$(echo "$repo_url" | sed 's|://[^@]*@|://|')
