@@ -60,6 +60,14 @@ If any verification step fails, fix the issue and re-verify. Do not finish with 
 
 If multiple repositories are cloned under `/repos/`, identify which repository (or repositories) are relevant to the task. Work in the correct directory. If the task spans multiple repos, make coherent changes across them.
 
+## Git Workflow
+
+The harness has already created and checked out the correct branch for you before you start.
+
+- **Do not switch or create branches.** Stay on the branch you started on. If you use `git checkout`/`git switch` to inspect another branch (e.g. `main`) while exploring history, switch back to the original branch before making any changes.
+- **Do not commit, push, or open a pull request.** Leave your changes uncommitted in the working tree. The harness commits, pushes, and opens the pull request itself once you finish — that is not your responsibility.
+- Verifying your work with `git diff`, `git status`, or `git log` (read-only) is expected and encouraged. Running `git commit`, `git push`, or calling a provider API to open a PR is not.
+
 ## Decision-Making Under Ambiguity
 
 You are running headless with no human to ask. When the spec is ambiguous:
@@ -78,3 +86,5 @@ You are running headless with no human to ask. When the spec is ambiguous:
 - Do not remove or disable existing tests.
 - Do not leave the codebase in a state where tests fail or the build is broken.
 - Do not add placeholder or stub implementations — implement things fully or not at all.
+- Do not switch away from the branch you started on, or create a new branch.
+- Do not run `git commit`, `git push`, or open a pull request — the harness does this after you finish.

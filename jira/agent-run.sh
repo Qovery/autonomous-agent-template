@@ -160,6 +160,11 @@ for i in $(seq 1 "$REPO_COUNT"); do
     exit 1
   fi
 
+  # Record the starting commit so the post-agent change check (Step 4) can
+  # detect commits the agent made itself, even if that leaves a clean working
+  # tree or happens on a different branch than the one prepared here.
+  printf -v "REPO_${i}_START_SHA" '%s' "$(git rev-parse HEAD)"
+
   cd /
 done
 
@@ -272,8 +277,8 @@ ANY_CHANGES=false
 PR_URLS=()
 
 for i in $(seq 1 "$REPO_COUNT"); do
-  url_var="REPO_${i}_URL"; token_var="REPO_${i}_TOKEN"
-  repo_url="${!url_var:-}"; repo_token="${!token_var:-}"
+  url_var="REPO_${i}_URL"; token_var="REPO_${i}_TOKEN"; start_sha_var="REPO_${i}_START_SHA"
+  repo_url="${!url_var:-}"; repo_token="${!token_var:-}"; start_sha="${!start_sha_var:-}"
 
   if [[ -z "$repo_url" ]]; then
     continue
@@ -285,35 +290,53 @@ for i in $(seq 1 "$REPO_COUNT"); do
 
   cd "$dest"
 
-  # Check for changes in this repo
+  current_branch=$(git branch --show-current)
+  current_sha=$(git rev-parse HEAD)
+  working_tree_dirty=true
   if git diff --quiet && git diff --cached --quiet && [[ -z "$(git ls-files --others --exclude-standard)" ]]; then
+    working_tree_dirty=false
+  fi
+
+  # No uncommitted changes AND no new commit: the agent genuinely made no
+  # changes. A clean working tree alone is NOT enough to conclude that — the
+  # agent may have committed its own changes (possibly on a different branch
+  # than the one prepared below), which also leaves the tree clean.
+  if [[ "$working_tree_dirty" == false && "$current_sha" == "$start_sha" ]]; then
     log "No changes in repo $i ($repo_name), skipping."
     continue
   fi
 
   ANY_CHANGES=true
-  log "Committing and pushing changes in repo $i ($repo_name)..."
 
-  git add -A
-  git commit -m "agent: ${JIRA_ISSUE_KEY} — ${ISSUE_TITLE}"
+  if [[ "$current_branch" != "$BRANCH" ]]; then
+    log "Agent switched to branch '$current_branch' instead of the prepared branch '$BRANCH' — pushing '$current_branch' instead."
+  fi
 
-  if ! push_branch "$repo_url" "$repo_token" "$provider" "$BRANCH"; then
+  if [[ "$working_tree_dirty" == true ]]; then
+    log "Committing and pushing changes in repo $i ($repo_name)..."
+    git add -A
+    git commit -m "agent: ${JIRA_ISSUE_KEY} — ${ISSUE_TITLE}"
+  else
+    log "Agent already committed changes in repo $i ($repo_name) — pushing existing commit(s)..."
+  fi
+
+  if ! push_branch "$repo_url" "$repo_token" "$provider" "$current_branch"; then
     log_error "Failed to push branch in repo $i ($repo_name)"
     post_callback "failed" "" "Failed to push branch in repo $repo_name"
     exit 1
   fi
 
-  log "Pushed branch: $BRANCH to $repo_name"
+  log "Pushed branch: $current_branch to $repo_name"
 
   # Open PR
   log "Opening pull request for $repo_name..."
-  pr_url=$(create_pr "$repo_url" "$repo_token" "$provider" "$BRANCH" "$PR_TITLE" "$PR_BODY")
+  pr_url=$(create_pr "$repo_url" "$repo_token" "$provider" "$current_branch" "$PR_TITLE" "$PR_BODY")
 
   if [[ -n "$pr_url" ]]; then
     log "PR created: $pr_url"
     PR_URLS+=("$pr_url")
   else
-    log "Warning: push succeeded but PR creation failed for $repo_name"
+    log "Warning: push succeeded but PR creation failed for $repo_name (a PR may already exist if the agent opened one itself)"
   fi
 
   cd /
