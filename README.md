@@ -91,13 +91,22 @@ flattened to plain text internally).
 ## Git providers
 
 The repo is cloned/pushed and the PR is opened using a single `REPO_*_TOKEN`.
-The auth header differs per provider (auto-detected from the repo URL):
+The provider is auto-detected from the repo URL; the auth header and API base
+differ per provider. Self-hosted instances (GitHub Enterprise Server, self-hosted
+GitLab, Bitbucket Data Center) are supported — the API base is derived from the
+repo host.
 
-| Provider | Clone/push | PR/MR API auth |
-|----------|-----------|----------------|
-| GitHub | `x-access-token:<token>` | `Authorization: Bearer` |
-| GitLab | `oauth2:<token>` | `PRIVATE-TOKEN` |
-| Bitbucket | `x-token-auth:<token>` | `Authorization: Bearer` (repo/workspace access token) |
+| Provider | Clone/push user | PR/MR API auth | API base |
+|----------|-----------------|----------------|----------|
+| GitHub.com | `x-access-token:<token>` | `Authorization: Bearer` | `api.github.com` |
+| GitHub Enterprise Server | `x-access-token:<token>` | `Authorization: Bearer` | `https://<host>/api/v3` |
+| GitLab (SaaS + self-hosted) | `oauth2:<token>` | `PRIVATE-TOKEN` | `https://<host>/api/v4` (full namespace path, subgroups OK) |
+| Bitbucket Cloud | `x-token-auth:<token>` | `Authorization: Bearer` | `api.bitbucket.org/2.0` |
+| Bitbucket Data Center | `x-token-auth:<token>` | `Authorization: Bearer` | `https://<host>/rest/api/1.0` |
+
+Detection matches the product name in the host, so `gitlab.example.com`,
+`github.corp`, `bitbucket.acme.io` resolve correctly. A fully custom domain
+(e.g. `git.acme.com`) can't be told apart and defaults to GitHub.
 
 ## Controlling the agent from your tracker
 
