@@ -79,12 +79,25 @@ These are injected automatically by the RDE Portal when it launches the environm
 
 ### Jira (when using Jira Cloud)
 
+Auth is an OAuth 2.0 access token (Bearer). REST v3 (text fields are ADF,
+flattened to plain text internally).
+
 | Variable | Description |
 |----------|-------------|
-| `JIRA_BASE_URL` | Site base URL (e.g., `https://your-org.atlassian.net`) |
-| `JIRA_EMAIL` | Atlassian account email (Basic auth username) |
-| `JIRA_API_TOKEN` | Atlassian API token (secret) |
+| `JIRA_BASE_URL` | Pre-computed API base (gateway + cloud id + version), e.g. `https://api.atlassian.com/ex/jira/<cloud_id>/rest/api/3/` |
+| `JIRA_ACCESS_TOKEN` | OAuth 2.0 access token (secret), sent as `Authorization: Bearer` |
 | `JIRA_ISSUE_KEY` | Issue key to work on (e.g., `PROJ-123`) — also the REST path id |
+
+## Git providers
+
+The repo is cloned/pushed and the PR is opened using a single `REPO_*_TOKEN`.
+The auth header differs per provider (auto-detected from the repo URL):
+
+| Provider | Clone/push | PR/MR API auth |
+|----------|-----------|----------------|
+| GitHub | `x-access-token:<token>` | `Authorization: Bearer` |
+| GitLab | `oauth2:<token>` | `PRIVATE-TOKEN` |
+| Bitbucket | `x-token-auth:<token>` | `Authorization: Bearer` (repo/workspace access token) |
 
 ## Controlling the agent from your tracker
 

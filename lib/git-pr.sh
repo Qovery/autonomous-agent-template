@@ -106,8 +106,11 @@ create_pr() {
     gitlab)
       _create_gitlab_mr "$owner_repo" "$token" "$branch" "$title" "$body"
       ;;
+    bitbucket)
+      _create_bitbucket_pr "$owner_repo" "$token" "$branch" "$title" "$body"
+      ;;
     *)
-      # Bitbucket and others: push only, no PR API
+      # Unknown provider: push only, no PR API
       echo ""
       ;;
   esac
@@ -172,4 +175,28 @@ _create_gitlab_mr() {
   fi
 
   echo "$mr_url"
+}
+
+# ── Bitbucket PR ───────────────────────────────────────────────────────────────
+# owner_repo is "<workspace>/<repo_slug>". Auth is a repository/workspace access
+# token via Bearer (matches the x-token-auth clone/push pattern above).
+
+_create_bitbucket_pr() {
+  local owner_repo="$1" token="$2" branch="$3" title="$4" body="$5"
+  local api="https://api.bitbucket.org/2.0/repositories/${owner_repo}/pullrequests"
+  local response pr_url base
+
+  # Try 'main' then 'master' as the destination branch.
+  for base in main master; do
+    response=$(curl -sS "$api" \
+      -H "Authorization: Bearer ${token}" \
+      -H "Content-Type: application/json" \
+      -d "$(jq -n --arg title "$title" --arg desc "$body" --arg src "$branch" --arg tgt "$base" \
+        '{ title: $title, description: $desc, source: { branch: { name: $src } }, destination: { branch: { name: $tgt } } }')")
+
+    pr_url=$(echo "$response" | jq -r '.links.html.href // empty')
+    [[ -n "$pr_url" ]] && break
+  done
+
+  echo "$pr_url"
 }

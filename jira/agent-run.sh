@@ -33,9 +33,11 @@ log_error() { printf '[agent-run] [ERROR] %s\n' "$1" >&2; }
 # ── Validate required environment ────────────────────────────────────────────
 
 REQUIRED_VARS=(
-  JIRA_BASE_URL JIRA_EMAIL JIRA_API_TOKEN JIRA_ISSUE_KEY
+  JIRA_BASE_URL JIRA_ACCESS_TOKEN JIRA_ISSUE_KEY
   RDE_AUTONOMOUS_AGENT RDE_RUN_CALLBACK_URL RDE_RUN_TIMEOUT_MIN
 )
+# JIRA_BASE_URL is the pre-computed API base (gateway + cloud id + version),
+# e.g. https://api.atlassian.com/ex/jira/<cloud_id>/rest/api/3/
 
 for var in "${REQUIRED_VARS[@]}"; do
   if [[ -z "${!var:-}" ]]; then
@@ -260,7 +262,9 @@ log "Agent completed successfully"
 # ── Step 4: Check for changes, commit, push, and open PRs ────────────────────
 
 PR_TITLE="${JIRA_ISSUE_KEY}: ${ISSUE_TITLE}"
-PR_BODY="Automated fix by the Qovery autonomous agent for [${JIRA_ISSUE_KEY}](${JIRA_BASE_URL%/}/browse/${JIRA_ISSUE_KEY}).
+# No hyperlink: JIRA_BASE_URL is the api.atlassian.com gateway, not a browsable
+# URL. The BFF callback posts the real issue link on the Jira side.
+PR_BODY="Automated fix by the Qovery autonomous agent for ${JIRA_ISSUE_KEY}.
 
 $(cat "$TASK_FILE")"
 
