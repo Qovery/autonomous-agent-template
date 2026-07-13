@@ -79,12 +79,34 @@ These are injected automatically by the RDE Portal when it launches the environm
 
 ### Jira (when using Jira Cloud)
 
+Auth is an OAuth 2.0 access token (Bearer). REST v3 (text fields are ADF,
+flattened to plain text internally).
+
 | Variable | Description |
 |----------|-------------|
-| `JIRA_BASE_URL` | Site base URL (e.g., `https://your-org.atlassian.net`) |
-| `JIRA_EMAIL` | Atlassian account email (Basic auth username) |
-| `JIRA_API_TOKEN` | Atlassian API token (secret) |
+| `JIRA_BASE_URL` | Pre-computed API base (gateway + cloud id + version), e.g. `https://api.atlassian.com/ex/jira/<cloud_id>/rest/api/3/` |
+| `JIRA_ACCESS_TOKEN` | OAuth 2.0 access token (secret), sent as `Authorization: Bearer` |
 | `JIRA_ISSUE_KEY` | Issue key to work on (e.g., `PROJ-123`) — also the REST path id |
+
+## Git providers
+
+The repo is cloned/pushed and the PR is opened using a single `REPO_*_TOKEN`.
+The provider is auto-detected from the repo URL; the auth header and API base
+differ per provider. Self-hosted instances (GitHub Enterprise Server, self-hosted
+GitLab, Bitbucket Data Center) are supported — the API base is derived from the
+repo host.
+
+| Provider | Clone/push user | PR/MR API auth | API base |
+|----------|-----------------|----------------|----------|
+| GitHub.com | `x-access-token:<token>` | `Authorization: Bearer` | `api.github.com` |
+| GitHub Enterprise Server | `x-access-token:<token>` | `Authorization: Bearer` | `https://<host>/api/v3` |
+| GitLab (SaaS + self-hosted) | `oauth2:<token>` | `PRIVATE-TOKEN` | `https://<host>/api/v4` (full namespace path, subgroups OK) |
+| Bitbucket Cloud | `x-token-auth:<token>` | `Authorization: Bearer` | `api.bitbucket.org/2.0` |
+| Bitbucket Data Center | `x-token-auth:<token>` | `Authorization: Bearer` | `https://<host>/rest/api/1.0` |
+
+Detection matches the product name in the host, so `gitlab.example.com`,
+`github.corp`, `bitbucket.acme.io` resolve correctly. A fully custom domain
+(e.g. `git.acme.com`) can't be told apart and defaults to GitHub.
 
 ## Controlling the agent from your tracker
 
