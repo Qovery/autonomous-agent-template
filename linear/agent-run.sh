@@ -87,6 +87,11 @@ fi
 ISSUE_TITLE=$(head -1 "$TASK_FILE" | sed 's/^# //')
 log "Issue: ${LINEAR_ISSUE_KEY} — ${ISSUE_TITLE}"
 
+# Captured before the system prompt is prepended below, so Step 4 can fall
+# back to the raw ticket text (not the system-prompt-prefixed task file) if
+# the agent doesn't leave a PR summary behind.
+ORIGINAL_TASK=$(cat "$TASK_FILE")
+
 # ── Step 1b: Prepend the system prompt to the task ───────────────────────────
 # The system prompt can be overridden via RDE_AGENT_SYSTEM_PROMPT env var
 # (set in the blueprint). Falls back to the bundled default.
@@ -106,7 +111,6 @@ else
 fi
 
 if [[ -n "$SYSTEM_PROMPT_FILE" ]]; then
-  ORIGINAL_TASK=$(cat "$TASK_FILE")
   {
     cat "$SYSTEM_PROMPT_FILE"
     echo ""
@@ -265,9 +269,7 @@ log "Agent completed successfully"
 # ── Step 4: Check for changes, commit, push, and open PRs ────────────────────
 
 PR_TITLE="${LINEAR_ISSUE_KEY}: ${ISSUE_TITLE}"
-PR_BODY="Automated fix by the Qovery autonomous agent for [${LINEAR_ISSUE_KEY}](https://linear.app/issue/${LINEAR_ISSUE_ID}).
-
-$(cat "$TASK_FILE")"
+PR_BODY_INTRO="Automated fix by the Qovery autonomous agent for [${LINEAR_ISSUE_KEY}](https://linear.app/issue/${LINEAR_ISSUE_ID})."
 
 ANY_CHANGES=false
 PR_URLS=()
@@ -314,6 +316,39 @@ for i in $(seq 1 "$REPO_COUNT"); do
     git commit -m "agent: ${LINEAR_ISSUE_KEY} — ${ISSUE_TITLE}"
   else
     log "Agent already committed changes in repo $i ($repo_name) — pushing existing commit(s)..."
+  fi
+
+  # ── Build this repo's PR description ────────────────────────────────────
+  # Preference order: (1) a summary the coding agent wrote itself, (2) a
+  # summary generated from this repo's actual diff, (3) a minimal fallback.
+  # Never falls back to the raw ticket — that's what caused PR bodies to be
+  # dumped full of ticket context in the previous version of this script.
+  AGENT_SUMMARY_FILE="/tmp/pr-summary.md"
+  FINAL_SHA=$(git rev-parse HEAD)
+  DIFF_FILE="/tmp/pr-diff-${i}.patch"
+  DIFF_SUMMARY_FILE="/tmp/pr-summary-diff-${i}.md"
+
+  if [[ -s "$AGENT_SUMMARY_FILE" ]]; then
+    log "Using agent-authored PR summary for $repo_name"
+    PR_BODY="${PR_BODY_INTRO}
+
+$(cat "$AGENT_SUMMARY_FILE")"
+  else
+    git diff "$start_sha" "$FINAL_SHA" > "$DIFF_FILE" 2>/dev/null || true
+    chown "$AGENT_USER:$AGENT_USER" "$DIFF_FILE" 2>/dev/null || true
+
+    if [[ -s "$DIFF_FILE" ]] && runuser -u "$AGENT_USER" -- \
+         env DIFF_FILE="$DIFF_FILE" OUTPUT_FILE="$DIFF_SUMMARY_FILE" ISSUE_TITLE="$ISSUE_TITLE" \
+         NODE_PATH="/usr/lib/node_modules" node /usr/local/lib/agent/pr-summary-runner.js \
+       && [[ -s "$DIFF_SUMMARY_FILE" ]]; then
+      log "Generated PR summary from diff for $repo_name"
+      PR_BODY="${PR_BODY_INTRO}
+
+$(cat "$DIFF_SUMMARY_FILE")"
+    else
+      log "Diff-based PR summary generation failed for $repo_name — using a minimal description"
+      PR_BODY="$PR_BODY_INTRO"
+    fi
   fi
 
   if ! push_branch "$repo_url" "$repo_token" "$provider" "$current_branch"; then

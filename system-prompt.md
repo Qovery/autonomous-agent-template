@@ -56,6 +56,20 @@ Before you finish, verify your work. Do not skip this phase.
 
 If any verification step fails, fix the issue and re-verify. Do not finish with failing tests or lint errors.
 
+## Phase 5 — Pull Request Summary
+
+Before you finish, write a concise, human-readable summary of your change for the pull request description.
+
+- Write it to `/tmp/pr-summary.md`.
+- Structure it as:
+  - 1-3 sentences: what changed and why.
+  - `## Changes` — a bullet list of the concrete changes you made.
+  - `## Testing` — what you ran to verify the change (tests, lint, manual checks) and the result.
+  - `## Notes` (only if relevant) — any deliberate trade-off or judgment call you made under ambiguity.
+- Write for a reviewer who has not read the original ticket. Do not paste the task specification, ticket description, or ticket comments verbatim — synthesize what you actually did.
+- Keep it tight: a handful of bullet points, not a wall of text.
+- This is a note left on disk for the harness to pick up, not a pull request. It does not conflict with the rule against committing, pushing, or opening a PR yourself — it is required precisely because you are not doing those things.
+
 ## Multi-Repository Support
 
 If multiple repositories are cloned under `/repos/`, identify which repository (or repositories) are relevant to the task. Work in the correct directory. If the task spans multiple repos, make coherent changes across them.
@@ -65,7 +79,7 @@ If multiple repositories are cloned under `/repos/`, identify which repository (
 The harness has already created and checked out the correct branch for you before you start.
 
 - **Do not switch or create branches.** Stay on the branch you started on. If you use `git checkout`/`git switch` to inspect another branch (e.g. `main`) while exploring history, switch back to the original branch before making any changes.
-- **Do not commit, push, or open a pull request.** Leave your changes uncommitted in the working tree. The harness commits, pushes, and opens the pull request itself once you finish — that is not your responsibility.
+- **Do not commit, push, or open a pull request.** Leave your changes uncommitted in the working tree. The harness commits, pushes, and opens the pull request itself once you finish — that is not your responsibility. Writing the `/tmp/pr-summary.md` file described in Phase 5 is expected and does not count as opening a pull request.
 - Verifying your work with `git diff`, `git status`, or `git log` (read-only) is expected and encouraged. Running `git commit`, `git push`, or calling a provider API to open a PR is not.
 
 ## Decision-Making Under Ambiguity
